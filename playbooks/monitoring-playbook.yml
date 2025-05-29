@@ -1,0 +1,135 @@
+---
+- name: Install Promtail and monitoring agents
+  hosts: proxmox
+  become: true
+  vars:
+    promtail_version: "3.5.1"
+    # node_exporter_version: "1.8.1"
+    # telegraf_repo: "https://repos.influxdata.com/debian"
+
+  tasks:
+    - name: Ensure wget and unzip are installed (Debian-based)
+      apt:
+        name:
+          - wget
+          - unzip
+        state: present
+        update_cache: yes
+      when: ansible_os_family == "Debian"
+
+    - name: Create /opt directory
+      file:
+        path: /opt
+        state: directory
+        mode: '0755'
+
+    - name: Download and install Promtail
+      shell: |
+        cd /opt
+        curl -sLO https://github.com/grafana/loki/releases/download/v{{ promtail_version }}/promtail-linux-amd64.zip
+        unzip -o promtail-linux-amd64.zip
+        chmod +x promtail-linux-amd64
+        mv promtail-linux-amd64 /usr/local/bin/promtail
+      args:
+        creates: /usr/local/bin/promtail
+
+    - name: Deploy Promtail config
+      template:
+        src: /etc/ansible/templates/promtail.yml
+        dest: /etc/promtail.yaml
+        mode: '0644'
+
+    - name: Create systemd service for Promtail
+      copy:
+        dest: /etc/systemd/system/promtail.service
+        content: |
+          [Unit]
+          Description=Promtail Service
+          After=network.target
+
+          [Service]
+          ExecStart=/usr/local/bin/promtail -config.file=/etc/promtail.yaml
+          Restart=always
+
+          [Install]
+          WantedBy=multi-user.target
+      notify: Restart promtail
+
+# - name: Install Node Exporter on Linux VMs
+#   hosts: linux_vms
+#   become: true
+#   tasks:
+#     - name: Download and install Node Exporter
+#       shell: |
+#         cd /opt
+#         curl -sLO https://github.com/prometheus/node_exporter/releases/download/v{{ node_exporter_version }}/node_exporter-{{ node_exporter_version }}.linux-amd64.tar.gz
+#         tar -xzf node_exporter-{{ node_exporter_version }}.linux-amd64.tar.gz
+#         cp node_exporter-{{ node_exporter_version }}.linux-amd64/node_exporter /usr/local/bin/
+#         chmod +x /usr/local/bin/node_exporter
+#       args:
+#         creates: /usr/local/bin/node_exporter
+
+#     - name: Create systemd service for Node Exporter
+#       copy:
+#         dest: /etc/systemd/system/node_exporter.service
+#         content: |
+#           [Unit]
+#           Description=Node Exporter
+#           After=network.target
+
+#           [Service]
+#           ExecStart=/usr/local/bin/node_exporter
+#           Restart=always
+
+#           [Install]
+#           WantedBy=multi-user.target
+#       notify: Restart node exporter
+
+# - name: Install Telegraf on Proxmox Hosts
+#   hosts: proxmox_hosts
+#   become: true
+#   tasks:
+#     - name: Add InfluxData repo key
+#       apt_key:
+#         url: https://repos.influxdata.com/influxdata-archive_compat.key
+#         state: present
+
+#     - name: Add Telegraf APT repo
+#       apt_repository:
+#         repo: "deb {{ telegraf_repo }} bullseye stable"
+#         state: present
+#         filename: influxdb
+
+#     - name: Install telegraf
+#       apt:
+#         name: telegraf
+#         state: present
+#         update_cache: yes
+
+#     - name: Configure telegraf (optional)
+#       template:
+#         src: telegraf.conf.j2
+#         dest: /etc/telegraf/telegraf.conf
+#       notify: Restart telegraf
+
+  handlers:
+    - name: Restart promtail
+      systemd:
+        name: promtail
+        daemon_reload: yes
+        state: restarted
+        enabled: yes
+
+    # - name: Restart node exporter
+    #   systemd:
+    #     name: node_exporter
+    #     daemon_reload: yes
+    #     state: restarted
+    #     enabled: yes
+
+    # - name: Restart telegraf
+    #   systemd:
+    #     name: telegraf
+    #     daemon_reload: yes
+    #     state: restarted
+    #     enabled: yes

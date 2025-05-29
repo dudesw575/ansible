@@ -1,0 +1,25 @@
+---
+- name: One-time sudo installer
+  hosts: proxmox
+  become: false
+  remote_user: root
+  tasks:
+    - name: Install sudo (Debian/Ubuntu)
+      apt:
+        name: sudo
+        state: present
+        update_cache: yes
+      when: ansible_os_family == "Debian"
+
+    - name: Ensure ansible user exists
+      user:
+        name: ansible
+        state: present
+        shell: /bin/bash
+        create_home: yes
+
+    - name: Allow ansible user to use sudo without password
+      copy:
+        content: "ansible ALL=(ALL) NOPASSWD:ALL\n"
+        dest: /etc/sudoers.d/ansible
+        mode: '0440'
